@@ -167,13 +167,6 @@ function landingPageTrigger() {
   return LANDING_PAGE_INIT_MSG;
 }
 
-function searchNotAllowed() {
-  if (shouldTriggerQueryOnTokenSave) {
-    return false;
-  }
-  return ONGOING_REQUESTS_COUNTER !== 0 || JQ_SEARCH_BTN.hasClass('is-loading');
-}
-
 const AS_ID_WRAPPER = 'awesome_stars_wrapper';
 const AS_ID_HEADER  = 'awesome_stars_header';
 const AS_ID_MSG     = 'awesome_stars_msg';

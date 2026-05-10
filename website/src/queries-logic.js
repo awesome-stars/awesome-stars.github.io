@@ -103,6 +103,13 @@ function decrementCounters() {
   }
 }
 
+function searchNotAllowed() {
+  if (shouldTriggerQueryOnTokenSave) {
+    return false;
+  }
+  return ONGOING_REQUESTS_COUNTER !== 0 || JQ_SEARCH_BTN.hasClass('is-loading');
+}
+
 function send(requestPromise, successFn, failureFn) {
   if (RATE_LIMIT_EXCEEDED) {
     failureFn();
