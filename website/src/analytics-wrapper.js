@@ -31,10 +31,6 @@ function ga_queryResultClick(fullName, isInitialRepo) {
 }
 
 
-/* Functionalities. */
-function ga_exportCSV(query) {
-  dispatch('feature', 'Export-CSV', query);
-}
 function ga_openSettings() {
   dispatch('feature', 'Query-Settings', 'Open');
 }

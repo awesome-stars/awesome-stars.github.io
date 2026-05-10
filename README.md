@@ -1,5 +1,7 @@
 # Awesome Stars
 
+![Awesome Stars banner](website/assets/awesome-stars-banner.svg)
+
 Awesome Stars renders a GitHub markdown file, finds GitHub repository links in it, and adds live repository stats beside each link.
 
 It is designed for awesome lists, where the README often contains many project links but does not make popularity or maintenance activity easy to scan.
@@ -53,6 +55,10 @@ cd website
 npm run dev
 ```
 
+## Browser Extension
+
+The [`plugin`](/plugin) directory contains a Chrome-compatible extension based on the original Useful Forks extension structure. It injects a **Stars** button on GitHub repository pages and opens the current repository in Awesome Stars.
+
 ## Acknowledgment
 
-Awesome Stars is adapted from [Useful Forks](https://github.com/useful-forks/useful-forks.github.io). It keeps the same static GitHub Pages approach, local browser token storage, and Octokit-based GitHub API access pattern, while replacing the fork-discovery workflow with markdown rendering and repository-stat enrichment.
+Awesome Stars is adapted from [Useful Forks](https://github.com/useful-forks/useful-forks.github.io). It keeps the same static GitHub Pages approach, local browser token storage, and Octokit-based GitHub API access pattern, while replacing the fork-discovery workflow with markdown rendering and repository-stat enrichment. The Awesome Stars repository is [awesome-stars/awesome-stars.github.io](https://github.com/awesome-stars/awesome-stars.github.io).

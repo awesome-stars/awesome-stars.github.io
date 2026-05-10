@@ -54,6 +54,14 @@
   text-align: center;
 }
 
+.as-banner {
+  display: block;
+  height: auto;
+  margin: 0 auto 22px;
+  max-width: 560px;
+  width: min(100%, 560px);
+}
+
 .as-badge {
   align-items: center;
   display: inline-flex;

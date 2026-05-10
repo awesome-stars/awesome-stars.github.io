@@ -24,9 +24,10 @@ const EXAMPLE_LINK_1 = `<a href="${buildAutoQueryURL('sindresorhus/awesome')}"
                            onclick="ga_shortExampleLink();">sindresorhus/awesome</a>`;
 const EXAMPLE_LINK_2 = `<a href="${buildAutoQueryURL('sindresorhus/awesome-nodejs', 'readme.md')}"
                            onclick="ga_fullExampleLink();">sindresorhus/awesome-nodejs</a>`;
-const BODY_REPO_LINK = `<a href="${buildGithubRepoURL('useful-forks/useful-forks.github.io')}"
+const BODY_REPO_LINK = `<a href="${buildGithubRepoURL('awesome-stars/awesome-stars.github.io')}"
                            onclick="ga_bodyRepoLink();">the GitHub project</a>`;
-const LANDING_PAGE_INIT_MSG = "<h1 class='title'>Awesome Stars</h1>"
+const LANDING_PAGE_INIT_MSG = "<img class='as-banner' src='assets/awesome-stars-banner.svg' alt='Awesome Stars banner' />"
+    + "<h1 class='title'>Awesome Stars</h1>"
     + "<p class='subtitle'>Render an awesome list and annotate GitHub repository links with stars, forks, and recent activity.</p>"
     + "Type a repository above, or try <strong>" + EXAMPLE_LINK_1 + "</strong> or <strong>" + EXAMPLE_LINK_2 + "</strong>.<br/><br/>"
     + "Use a URL like <span class='is-family-monospace'>?repo=owner/name&path=README.md</span> to deep-link directly from an awesome list badge.<br/><br/>"

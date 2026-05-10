@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title desc">
+  <title id="title">Awesome Stars logo</title>
+  <desc id="desc">A gold star over a dark GitHub-style circle.</desc>
+  <circle cx="32" cy="32" r="30" fill="#24292f"/>
+  <path fill="#f2cc60" d="m32 9.5 6.9 14 15.5 2.3-11.2 10.9 2.6 15.4L32 44.8 18.2 52l2.6-15.4L9.6 25.8l15.5-2.3L32 9.5z"/>
+  <path fill="#fff8c5" d="m32 16.4 4.7 9.4 10.4 1.5-7.5 7.4 1.8 10.3-9.4-4.9-9.4 4.9 1.8-10.3-7.5-7.4 10.4-1.5L32 16.4z"/>
+</svg>

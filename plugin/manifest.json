@@ -1,16 +1,14 @@
 {
   "manifest_version": 3,
-  "name": "Useful Forks",
-  "version": "2.2.3",
-
-  "description": "To list GitHub forks ordered by stars, with additional information and automatic filtering of irrelevant ones.",
+  "name": "Awesome Stars",
+  "version": "0.1.0",
+  "description": "Open GitHub repositories in Awesome Stars to render markdown lists with live stars, forks, and activity badges.",
   "icons": {
-    "16": "images/useful-forks-16.png",
-    "32": "images/useful-forks-32.png",
-    "48": "images/useful-forks-48.png",
-    "128": "images/useful-forks-128.png"
+    "16": "images/awesome-stars.svg",
+    "32": "images/awesome-stars.svg",
+    "48": "images/awesome-stars.svg",
+    "128": "images/awesome-stars.svg"
   },
-
   "host_permissions": [
     "*://github.com/*"
   ],
@@ -20,7 +18,7 @@
         "*://github.com/*/*"
       ],
       "js": [
-        "useful-forks.js"
+        "awesome-stars.js"
       ],
       "run_at": "document_idle",
       "all_frames": true
