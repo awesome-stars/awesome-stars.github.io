@@ -37,24 +37,30 @@ Query parameters:
 
 ## Add a Badge
 
-If you maintain an awesome list, add a small Shields badge near the top of your README so readers can jump to the enriched view.
+If you maintain an awesome list, add a small Shields badge near the top of your README. Readers click it and land on Awesome Stars with your list already loaded.
 
-Basic badge:
+Use this for a normal awesome list whose main file is `README.md`:
 
 ```md
 [![Awesome Stars](https://img.shields.io/badge/Awesome%20Stars-view%20stats-f2cc60?labelColor=24292f)](https://awesome-stars.github.io/?repo=OWNER/REPO)
 ```
 
-Badge for a non-default markdown file:
+Replace `OWNER/REPO` with your awesome-list repository:
+
+```md
+[![Awesome Stars](https://img.shields.io/badge/Awesome%20Stars-view%20stats-f2cc60?labelColor=24292f)](https://awesome-stars.github.io/?repo=sindresorhus/awesome)
+```
+
+If your list lives in another markdown file, include `path`:
 
 ```md
 [![Awesome Stars](https://img.shields.io/badge/Awesome%20Stars-view%20stats-f2cc60?labelColor=24292f)](https://awesome-stars.github.io/?repo=OWNER/REPO&path=docs/list.md)
 ```
 
-Example:
+If your list should be read from a specific branch, tag, or commit, include `ref`:
 
 ```md
-[![Awesome Stars](https://img.shields.io/badge/Awesome%20Stars-view%20stats-f2cc60?labelColor=24292f)](https://awesome-stars.github.io/?repo=sindresorhus/awesome)
+[![Awesome Stars](https://img.shields.io/badge/Awesome%20Stars-view%20stats-f2cc60?labelColor=24292f)](https://awesome-stars.github.io/?repo=OWNER/REPO&path=README.md&ref=main)
 ```
 
 ## What Gets Annotated
