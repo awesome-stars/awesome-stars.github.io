@@ -8,7 +8,7 @@ It is designed for awesome lists, where the README often contains many project l
 
 ## Online Usage
 
-Open the website and provide a repository in `owner/name` format. If deployed from a fork on GitHub Pages, the root page redirects into the static app under `website/` and preserves query strings.
+Open the website and provide a repository in `owner/name` format. GitHub Pages deploys the `website/` directory as the site root, so public links do not include `/website/`.
 
 Deep links are supported:
 
