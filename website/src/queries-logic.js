@@ -1,135 +1,93 @@
 const { Octokit } = require("@octokit/rest");
 const { throttling } = require("@octokit/plugin-throttling");
 
+const DEFAULT_MARKDOWN_PATH = "README.md";
+const GRAPHQL_BATCH_SIZE = 50;
 
-/* Filtering constants. */
-const attributeRgx = '([a-z]+)';
-const operatorRgx = '(<=|>=|[<=>])';
-const dateRgx = '[0-9]{4}(?:(?<!-|-[0-9])-[0-9]{0,2}){0,2}';
-const valueRgx = `(${dateRgx}|[0-9]+)`;
-const regex = new RegExp(attributeRgx + operatorRgx + valueRgx);
-const mapTable = {
-  'ahead': 'ahead_by',
-  'behind': 'behind_by',
-  'pushed': 'pushed_at',
-  'date': 'pushed_at',
-  'd': 'pushed_at',
-  'a': 'ahead_by',
-  'b': 'behind_by',
-  'p': 'pushed_at',
-  's': 'stars',
-  'f': 'forks',
-};
-
-/* Variables that should be cleared for every new query (defaults are set in "clear_old_data"). */
-let TABLE_DATA = [];
-let REPO_DATE;
-let TOTAL_FORKS;
+let CURRENT_REPO = null;
+let CURRENT_PATH = DEFAULT_MARKDOWN_PATH;
+let CURRENT_REF = null;
 let RATE_LIMIT_EXCEEDED;
 let TOTAL_API_CALLS_COUNTER;
 let ONGOING_REQUESTS_COUNTER = 0;
-let IS_USEFUL_FORK; // function that determines if a fork is useful or not
+let TOTAL_REPO_LINKS = 0;
+let TOTAL_BADGES_LOADED = 0;
+let TOTAL_BADGES_FAILED = 0;
+let REPO_LINKS = new Map();
 
 
-/** Used to reset the state for a brand new query. */
 function clear_old_data() {
   clearHeader();
   clearMsg();
+  clearContent();
   removeProgressBar();
-  TABLE_DATA = []; // clear the table data
-  clearTable(); // clear the table DOM
   setApiCallsLabel(0);
-  hideExportCsvBtn();
-  REPO_DATE = new Date();
-  TOTAL_FORKS = 0;
+  hideStatsBar();
+  CURRENT_REPO = null;
+  CURRENT_PATH = DEFAULT_MARKDOWN_PATH;
+  CURRENT_REF = null;
   RATE_LIMIT_EXCEEDED = false;
   TOTAL_API_CALLS_COUNTER = 0;
   ONGOING_REQUESTS_COUNTER = 0;
+  TOTAL_REPO_LINKS = 0;
+  TOTAL_BADGES_LOADED = 0;
+  TOTAL_BADGES_FAILED = 0;
+  REPO_LINKS = new Map();
   shouldTriggerQueryOnTokenSave = false;
 }
 
 function getOnlyDate(full) {
-  return full.split('T')[0];
+  return full ? full.split('T')[0] : "unknown";
 }
 
-function extract_username_from_fork(combined_name) {
-  return combined_name.split('/')[0];
+function normalizePath(path) {
+  const cleanPath = (path || DEFAULT_MARKDOWN_PATH).trim().replace(/^\/+/, "");
+  return cleanPath || DEFAULT_MARKDOWN_PATH;
 }
 
-function badge_width(number) {
-  return 70 * number.toString().length; // magic number 70 extracted from analyzing 'shields.io'
+function getRefOrNull(ref) {
+  const cleanRef = (ref || "").trim();
+  return cleanRef || null;
 }
 
-/** Credits to https://shields.io/ */
-function ahead_badge(amount, url) {
-  return `
-  <a href="${url}" target="_blank" rel="noopener noreferrer">
-    <svg xmlns="http://www.w3.org/2000/svg" width="88" height="24" role="img">
-      <title>How far ahead this fork's default branch is compared to its parent's default branch</title>
-      <linearGradient id="s" x2="0" y2="100%"><stop offset="0" stop-color="#fff" stop-opacity=".7"/><stop offset=".1" stop-color="#aaa" stop-opacity=".1"/><stop offset=".9" stop-color="#000" stop-opacity=".3"/><stop offset="1" stop-color="#000" stop-opacity=".5"/></linearGradient><clipPath id="r"><rect width="88" height="18" rx="4" fill="#fff"/></clipPath><g clip-path="url(#r)"><rect width="43" height="18" fill="#555"/><rect x="43" width="45" height="18" fill="#007ec6"/><rect width="88" height="18" fill="url(#s)"/></g>
-      <g fill="#fff" text-anchor="middle" font-family="Verdana,Geneva,DejaVu Sans,sans-serif" text-rendering="geometricPrecision" font-size="110">
-        <text aria-hidden="true" x="225" y="140" fill="#010101" fill-opacity=".3" transform="scale(.1)" textLength="330">ahead</text>
-        <text x="225" y="130" transform="scale(.1)" fill="#fff" textLength="330">ahead</text>
-        <text x="645" y="130" transform="scale(.1)" fill="#fff" textLength="${badge_width(amount)}">${amount}</text>
-      </g>
-    </svg>
-  </a>`;
+function formatNumber(num) {
+  if (num >= 1000000) {
+    return `${(num / 1000000).toFixed(num >= 10000000 ? 0 : 1)}m`;
+  }
+  if (num >= 1000) {
+    return `${(num / 1000).toFixed(num >= 10000 ? 0 : 1)}k`;
+  }
+  return `${num}`;
 }
 
-/** Credits to https://shields.io/ */
-function behind_badge(amount, url) {
-  const color = amount === 0 ? '#4c1' : '#007ec6'; // green only when not behind, blue otherwise
-  return `
-  <a href="${url}" target="_blank" rel="noopener noreferrer">
-    <svg xmlns="http://www.w3.org/2000/svg" width="92" height="24" role="img">
-      <title>How far behind this fork's default branch is compared to its parent's default branch</title>
-      <linearGradient id="s" x2="0" y2="100%"><stop offset="0" stop-color="#fff" stop-opacity=".7"/><stop offset=".1" stop-color="#aaa" stop-opacity=".1"/><stop offset=".9" stop-color="#000" stop-opacity=".3"/><stop offset="1" stop-color="#000" stop-opacity=".5"/></linearGradient><clipPath id="r"><rect width="92" height="18" rx="4" fill="#fff"/></clipPath><g clip-path="url(#r)"><rect width="47" height="18" fill="#555"/>
-      <rect x="47" width="45" height="18" fill="${color}"/><rect width="92" height="18" fill="url(#s)"/></g>
-      <g fill="#fff" text-anchor="middle" font-family="Verdana,Geneva,DejaVu Sans,sans-serif" text-rendering="geometricPrecision" font-size="110">
-        <text aria-hidden="true" x="245" y="140" fill="#010101" fill-opacity=".3" transform="scale(.1)" textLength="370">behind</text>
-        <text x="245" y="130" transform="scale(.1)" fill="#fff" textLength="370">behind</text>
-        <text x="685" y="130" transform="scale(.1)" fill="#fff" textLength="${badge_width(amount)}">${amount}</text>
-      </g>
-    </svg>
-  </a>`;
-}
-
-/** Reverses the last part of the "ahead" URL. */
-function getBehindUrl(aheadUrl) {
-  var split = aheadUrl.split('/');
-  const behind_suffix = split[split.length - 1].split('...').reverse().join('...');
-  split[split.length - 1] = behind_suffix;
-  return split.join('/');
-}
-
-function getTdValue(rows, index, col) {
-  return Number(rows.item(index).getElementsByTagName('td').item(col).getAttribute("value"));
-}
-
-function sortTable() {
-  sortTableColumn(UF_ID_TABLE, 1);
-}
-
-/** 'sortColumn' index starts at 0.   https://stackoverflow.com/a/37814596/9768291 */
-function sortTableColumn(table_id, sortColumn){
-  let tableData = document.getElementById(table_id).getElementsByTagName('tbody').item(0);
-  let rows = tableData.getElementsByTagName('tr');
-  for(let i = 0; i < rows.length - 1; i++) {
-    for(let j = 0; j < rows.length - (i + 1); j++) {
-      if(getTdValue(rows, j, sortColumn) < getTdValue(rows, j+1, sortColumn)) {
-        tableData.insertBefore(rows.item(j+1), rows.item(j));
+function sanitizeHtml(html) {
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  doc.querySelectorAll("script, iframe, object, embed, form, input, button").forEach(el => el.remove());
+  doc.querySelectorAll("*").forEach(el => {
+    [...el.attributes].forEach(attr => {
+      const name = attr.name.toLowerCase();
+      const value = attr.value.trim();
+      if (name.startsWith("on")) {
+        el.removeAttribute(attr.name);
       }
+      if ((name === "href" || name === "src") && /^javascript:/i.test(value)) {
+        el.removeAttribute(attr.name);
+      }
+    });
+  });
+  return doc.body.innerHTML;
+}
+
+function onRateLimitExceeded() {
+  if (!RATE_LIMIT_EXCEEDED) {
+    console.warn('[awesome-stars] GitHub API rate-limit exceeded.');
+    RATE_LIMIT_EXCEEDED = true;
+    setMsg(AS_MSG_API_RATE);
+    disableQueryFields();
+    if (!LOCAL_STORAGE_GITHUB_ACCESS_TOKEN) {
+      proposeAddingToken();
     }
   }
-}
-
-function isEmpty(aList) {
-  return (!aList || aList.length === 0);
-}
-
-function displayConditionalErrorMsg() {
-  if (!RATE_LIMIT_EXCEEDED)
-    setMsg(UF_MSG_ERROR);
 }
 
 function incrementCounters() {
@@ -138,49 +96,11 @@ function incrementCounters() {
   setApiCallsLabel(TOTAL_API_CALLS_COUNTER);
 }
 
-function onRateLimitExceeded() {
-  if (!RATE_LIMIT_EXCEEDED) {
-    console.warn('[useful-forks] GitHub API rate-limit exceeded. (Since useful-forks sends many requests at once, you might have a lot of `Error Code 403` in your browser Console Logs.)');
-    RATE_LIMIT_EXCEEDED = true;
-    setMsg(UF_MSG_API_RATE);
-    disableQueryFields();
-    if (!LOCAL_STORAGE_GITHUB_ACCESS_TOKEN) {
-      proposeAddingToken();
-    }
-  }
-}
-
-function allRequestsAreDone() {
-  return ONGOING_REQUESTS_COUNTER <= 0 && TOTAL_API_CALLS_COUNTER >= TOTAL_FORKS;
-}
-
-/** Detection of final request. */
 function decrementCounters() {
   ONGOING_REQUESTS_COUNTER--;
-  if (allRequestsAreDone()) {
-    clearNonErrorMsg();
-    removeProgressBar();
-    updateBasedOnTable();
+  if (ONGOING_REQUESTS_COUNTER <= 0 && !RATE_LIMIT_EXCEEDED) {
     enableQueryFields();
   }
-}
-
-function updateBasedOnTable() {
-  clearNonScanStateMsg();
-  if (tableIsEmpty(getTableBody())) {
-    if (isMsgEmpty()) {
-      setMsg(UF_MSG_EMPTY_FILTER);
-    }
-    hideExportCsvBtn();
-  } else {
-    displayCsvExportBtn();
-  }
-}
-
-function searchNotAllowed() {
-  if (shouldTriggerQueryOnTokenSave)
-    return false;
-  return ONGOING_REQUESTS_COUNTER !== 0 || JQ_SEARCH_BTN.hasClass('is-loading');
 }
 
 function send(requestPromise, successFn, failureFn) {
@@ -191,282 +111,305 @@ function send(requestPromise, successFn, failureFn) {
 
   incrementCounters();
   requestPromise()
-  .then(
-      response => successFn(response.headers, response.data)) // wrapped in a { data, headers, status, url } object
-  .catch(
-      () => failureFn())
-  .finally(
-      () => decrementCounters());
-}
-
-/** Add bold to the date text if the date is earlier than the queried repo. */
-function compareDates(date, html) {
-  return REPO_DATE <= new Date(date) ? `<strong>${html}</strong>` : html;
-}
-
-function update_table_trying_use_filter() {
-  if (typeof IS_USEFUL_FORK === 'function') {
-    update_table(TABLE_DATA.filter(IS_USEFUL_FORK));
-  } else {
-    update_table(TABLE_DATA);
-  }
-}
-
-function is_duplicate_repo(name) {
-  for (const fork of TABLE_DATA) {
-    if (fork['name'] === name)
-      return true;
-  }
-  return false;
-}
-
-/** Updates table data, then calls function to update the table. */
-function update_table_data(responseData, user, repo, parentDefaultBranch) {
-  if (isEmpty(responseData)) {
-    return;
-  }
-
-  if (!RATE_LIMIT_EXCEEDED) { // because some times gets called after some other msgs are displayed
-    clearNonErrorMsg();
-    removeProgressBar();
-  }
-
-  for (const currFork of responseData) {
-    if (RATE_LIMIT_EXCEEDED) // we can skip everything below because they are only requests
-      continue;
-
-    if (is_duplicate_repo(currFork.full_name))
-      continue; // abort because repo is already listed
-
-    let datum = {
-      'name': currFork.full_name,
-      'stars': currFork.stargazers_count,
-      'forks': currFork.forks_count,
-    };
-
-    /* Commits diff data (ahead/behind). */
-    const requestPromise = () => octokit.repos.compareCommits({
-      owner: user,
-      repo: repo,
-      base: parentDefaultBranch,
-      head: `${extract_username_from_fork(currFork.full_name)}:${currFork.default_branch}`
-    });
-    const onSuccess = (responseHeaders, responseData) => {
-      if (responseData.total_commits > 0) {
-        datum['ahead_by'] = responseData.ahead_by;
-        datum['ahead_url'] = responseData.html_url;
-        datum['behind_by'] = responseData.behind_by;
-        datum['behind_url'] = getBehindUrl(responseData.html_url);
-        datum['pushed_at'] = getOnlyDate(currFork.pushed_at);
-        TABLE_DATA.push(datum);
-        if (TABLE_DATA.length > 1) showFilterContainer();
-        
-        update_table_trying_use_filter();
-      }
-    };
-    const onFailure = () => { }; // do nothing
-    send(requestPromise, onSuccess, onFailure);
-
-    /* Forks of forks. */
-    if (currFork.forks_count > 0) {
-      request_fork_page(1, currFork.owner.login, currFork.name, currFork.default_branch);
+  .then(response => successFn(response.headers, response.data))
+  .catch(error => {
+    if (error && (error.status === 403 || error.status === 429)) {
+      onRateLimitExceeded();
     }
-  }
+    failureFn(error);
+  })
+  .finally(() => decrementCounters());
 }
 
-function update_filter_appearance() {
-  const filter = getFilterOrDefault();
-  if (filter === '') {
-    JQ_FILTER_FIELD.removeClass('is-dark');
-  } else {
-    JQ_FILTER_FIELD.addClass('is-dark');
-  }
+function renderRepoLink(fullName) {
+  return `<a href="${buildGithubRepoURL(fullName)}" target="_blank" rel="noopener noreferrer">${fullName}</a>`;
 }
 
-function update_filter() {
-  update_filter_appearance();
-  updateFilterFunction();
-  update_table_trying_use_filter();
-
-  updateBasedOnTable();
+function updateHeader() {
+  const refText = CURRENT_REF ? ` @ ${CURRENT_REF}` : "";
+  setHeader(`<b>Rendered markdown</b>: ${renderRepoLink(CURRENT_REPO)} / <span class="is-family-monospace">${CURRENT_PATH}</span>${refText}`);
 }
 
-/**
- * Rewrites the table with the specified data.
- * @param {Array} data - Array of objects with the following keys: name, stars, forks, ahead_by, ahead_url, behind_by, behind_url, pushed_at
- */
-function update_table(data) {
-  clearTable();
-  let table_body = getTableBody();
-  for (const currFork of data) {
-    const { name, stars, forks, ahead_by, ahead_url, behind_by, behind_url, pushed_at } = currFork;
-    const date_txt = compareDates(pushed_at, getDateCol(pushed_at));
-
-    const NEW_ROW = $('<tr>', { id: extract_username_from_fork(name), class: "useful_forks_repo" });
-    NEW_ROW.append(
-      $('<td>').html(getRepoCol(name, false)).attr("value", name),
-      $('<td>').html(UF_TABLE_SEPARATOR + getStarCol(stars)).attr("value", stars),
-      $('<td>').html(UF_TABLE_SEPARATOR + getForkCol(forks)).attr("value", forks),
-      $('<td>').html(UF_TABLE_SEPARATOR),
-      $('<td>', { class: "uf_badge" }).html(ahead_badge(ahead_by, ahead_url)).attr("value", ahead_by),
-      $('<td>').html(UF_TABLE_SEPARATOR),
-      $('<td>', { class: "uf_badge" }).html(behind_badge(behind_by, behind_url)).attr("value", behind_by),
-      $('<td>').html(UF_TABLE_SEPARATOR + date_txt).attr("value", pushed_at)
-    );
-    table_body.append(NEW_ROW);
-  }
-  sortTable();
+function updateStatsBar() {
+  setStatsBar(`${TOTAL_REPO_LINKS} GitHub repo links found · ${TOTAL_BADGES_LOADED} loaded · ${TOTAL_BADGES_FAILED} unavailable`);
 }
 
-/**
- * 1. Empty filter means no filter.
- * 2. Filter string is a list of conditions separated by spaces.
- * 3. If a condition is invalid, it is ignored, and the rest of the conditions are applied.
- */
-function updateFilterFunction() {
-  const filter = getFilterOrDefault();
-  if (filter === '') {
-    IS_USEFUL_FORK = () => true; // no filter
-    return;
+function parseGithubRepoHref(href) {
+  let url;
+  try {
+    url = new URL(href, window.location.href);
+  } catch {
+    return null;
   }
 
-  // parse filter string into condition object
-  const conditionStrList = filter.split(' ');
-  let conditionObj = {};
-  for (const condition of conditionStrList) {
-    const matchResult = condition.match(regex);
-    let [attribute, operator, value] = matchResult ? matchResult.slice(1) : [];
-    if (!attribute || !operator || !value) {
-      continue; // invalid condition
-    }
-    if (attribute in mapTable) {
-      attribute = mapTable[attribute];
-    }
-    conditionObj[attribute] = { operator, value };
+  if (url.hostname.toLowerCase() !== "github.com") {
+    return null;
   }
-  
-  IS_USEFUL_FORK = (datum) => {
-    for (const [attribute, { operator, value }] of Object.entries(conditionObj)) {
-      const attrValue = datum[attribute];
-      switch (operator) {
-        case '>':
-          if (attrValue <= value)
-            return false;
-          break;
-        case '>=':
-          if (attrValue < value)
-            return false;
-          break;
-        case '<':
-          if (attrValue >= value)
-            return false;
-          break;
-        case '<=':
-          if (attrValue > value)
-            return false;
-          break;
-        case '=':
-          if (attrValue != value)
-            return false;
-          break;
-      }
-    }
-    return true;
+
+  const parts = url.pathname.split('/').filter(Boolean);
+  if (parts.length !== 2) {
+    return null;
   }
-}
 
-/** Paginated (index starts at 1) recursive forks scan. */
-function request_fork_page(page_number, user, repo, defaultBranch) {
-  if (RATE_LIMIT_EXCEEDED)
-    return;
+  const [owner, repoPart] = parts;
+  const repo = repoPart.replace(/\.git$/i, "");
+  const validPart = /^[A-Za-z0-9_.-]+$/;
+  if (!validPart.test(owner) || !validPart.test(repo)) {
+    return null;
+  }
 
-  const requestPromise = () => octokit.repos.listForks({
-    owner: user,
-    repo: repo,
-    sort: "stargazers",
-    per_page: 100, // maximum allowed by GitHub
-    page: page_number
-  });
-  const onSuccess = (responseHeaders, responseData) => {
-    removeProgressBar();
-
-    if (isEmpty(responseData)) // repo has not been forked
-      return;
-
-    sortTable();
-
-    /* Pagination (beyond 100 forks). */
-    const link_header = responseHeaders["link"];
-    if (link_header) {
-      let contains_next_page = link_header.indexOf('>; rel="next"');
-      if (contains_next_page !== -1) {
-        request_fork_page(++page_number, user, repo, defaultBranch);
-      }
-    }
-
-    update_table_data(responseData, user, repo, defaultBranch);
+  return {
+    owner,
+    repo,
+    key: `${owner}/${repo}`.toLowerCase(),
+    fullName: `${owner}/${repo}`
   };
-  const onFailure = () => displayConditionalErrorMsg();
-  send(requestPromise, onSuccess, onFailure);
 }
 
-/** Updates header with Queried Repo info, and initiates forks scan. */
-function initial_request(user, repo) {
-  const requestPromise = () => octokit.repos.get({
-    owner: user,
-    repo: repo
-  });
-  const onSuccess = (responseHeaders, responseData) => {
-    if (isEmpty(responseData))
+function collectRepoLinks() {
+  REPO_LINKS = new Map();
+
+  JQ_CONTENT.find("a[href]").each(function() {
+    if ($(this).find("img").length > 0) {
       return;
-
-    const onlyDate = getOnlyDate(responseData.pushed_at);
-    REPO_DATE = new Date(onlyDate);
-    TOTAL_FORKS = responseData.forks_count;
-
-    let html_txt = '<b>Queried repository</b>:&nbsp;&nbsp;&nbsp;';
-    html_txt += getRepoCol(responseData.full_name, true);
-    html_txt += UF_TABLE_SEPARATOR + getStarCol(responseData.stargazers_count);
-    html_txt += UF_TABLE_SEPARATOR + getForkCol(TOTAL_FORKS);
-    html_txt += UF_TABLE_SEPARATOR + getWatchCol(responseData.subscribers_count);
-    html_txt += UF_TABLE_SEPARATOR + getDateCol(onlyDate);
-
-    /* Warning the user if he's not scanning from the root. */
-    if (responseData.source) { // guarantees both 'source' and 'parent' are present
-      html_txt += `<p class="mt-2">`;
-
-      const source = responseData.source.full_name;
-      html_txt += getForkButtonLink("Source", source);
-
-      /* If at least 2nd level fork from source. */
-      const parent = responseData.parent.full_name;
-      if (parent !== source) {
-        html_txt += UF_TABLE_SEPARATOR;
-        html_txt += getForkButtonLink("Parent", parent);
-      }
-
-      html_txt += "</p>"
     }
 
-    setHeader(html_txt);
+    const parsed = parseGithubRepoHref(this.href);
+    if (!parsed) {
+      return;
+    }
 
-    if (TOTAL_FORKS > 0) {
-      request_fork_page(1, user, repo, responseData.default_branch);
+    if (!REPO_LINKS.has(parsed.key)) {
+      REPO_LINKS.set(parsed.key, {
+        owner: parsed.owner,
+        repo: parsed.repo,
+        fullName: parsed.fullName,
+        anchors: []
+      });
+    }
+    REPO_LINKS.get(parsed.key).anchors.push(this);
+  });
+
+  TOTAL_REPO_LINKS = REPO_LINKS.size;
+  TOTAL_BADGES_LOADED = 0;
+  TOTAL_BADGES_FAILED = 0;
+  updateStatsBar();
+}
+
+function createBadgeElement(state, stats) {
+  const badge = document.createElement("span");
+  badge.className = `as-badge as-badge-${state}`;
+
+  if (state === "loaded") {
+    badge.title = `${stats.nameWithOwner}: ${stats.stargazerCount} stars, ${stats.forkCount} forks, last push ${getOnlyDate(stats.pushedAt)}`;
+    badge.innerHTML = `
+      <span class="as-badge-segment as-stars">${SVG_STAR} ${formatNumber(stats.stargazerCount)}</span>
+      <span class="as-badge-segment as-forks">${SVG_FORK} ${formatNumber(stats.forkCount)}</span>
+      <span class="as-badge-segment as-date">${SVG_DATE} ${getOnlyDate(stats.pushedAt)}</span>`;
+  } else if (state === "token") {
+    badge.title = "Save a GitHub token to load repository metadata";
+    badge.textContent = "stats need token";
+  } else if (state === "loading") {
+    badge.title = "Loading repository metadata";
+    badge.textContent = "loading stats";
+  } else {
+    badge.title = "Repository metadata is unavailable";
+    badge.textContent = "stats unavailable";
+  }
+
+  return badge;
+}
+
+function setBadgesForRepo(repoInfo, state, stats) {
+  for (const anchor of repoInfo.anchors) {
+    const next = anchor.nextElementSibling;
+    if (next && next.classList.contains("as-badge")) {
+      next.replaceWith(createBadgeElement(state, stats));
     } else {
-      setMsg(UF_MSG_NO_FORKS);
+      anchor.insertAdjacentElement("afterend", createBadgeElement(state, stats));
+    }
+  }
+}
+
+function setAllBadges(state) {
+  for (const repoInfo of REPO_LINKS.values()) {
+    setBadgesForRepo(repoInfo, state);
+  }
+}
+
+function markRepoLoaded(repoInfo, stats) {
+  TOTAL_BADGES_LOADED++;
+  setBadgesForRepo(repoInfo, "loaded", stats);
+  updateStatsBar();
+}
+
+function markRepoFailed(repoInfo) {
+  TOTAL_BADGES_FAILED++;
+  setBadgesForRepo(repoInfo, "unavailable");
+  updateStatsBar();
+}
+
+function buildMetadataQuery(repos) {
+  const variables = {};
+  const declarations = [];
+  const selections = [];
+
+  repos.forEach((repoInfo, index) => {
+    const ownerVar = `owner${index}`;
+    const nameVar = `name${index}`;
+    variables[ownerVar] = repoInfo.owner;
+    variables[nameVar] = repoInfo.repo;
+    declarations.push(`$${ownerVar}: String!`, `$${nameVar}: String!`);
+    selections.push(`
+      r${index}: repository(owner: $${ownerVar}, name: $${nameVar}) {
+        nameWithOwner
+        url
+        stargazerCount
+        forkCount
+        pushedAt
+      }`);
+  });
+
+  const query = `
+    query AwesomeStarsMetadata(${declarations.join(", ")}) {
+      ${selections.join("\n")}
+      rateLimit {
+        remaining
+        resetAt
+      }
+    }`;
+
+  return { query, variables };
+}
+
+function fetchMetadataBatch(repos) {
+  const { query, variables } = buildMetadataQuery(repos);
+  send(
+    () => octokit.graphql(query, variables)
+      .catch(error => {
+        if (error.data) {
+          return error.data;
+        }
+        throw error;
+      })
+      .then(data => ({ headers: {}, data })),
+    (headers, data) => {
+      repos.forEach((repoInfo, index) => {
+        const stats = data[`r${index}`];
+        if (stats) {
+          markRepoLoaded(repoInfo, stats);
+        } else {
+          markRepoFailed(repoInfo);
+        }
+      });
+    },
+    () => repos.forEach(markRepoFailed)
+  );
+}
+
+function enrichRepoLinks() {
+  if (TOTAL_REPO_LINKS === 0) {
+    setMsg(AS_MSG_NO_REPO_LINKS);
+    enableQueryFields();
+    return;
+  }
+
+  if (!LOCAL_STORAGE_GITHUB_ACCESS_TOKEN) {
+    setAllBadges("token");
+    setMsg(AS_MSG_TOKEN_REQUIRED);
+    enableQueryFields();
+    proposeAddingToken();
+    return;
+  }
+
+  setAllBadges("loading");
+  const repos = [...REPO_LINKS.values()];
+  for (let i = 0; i < repos.length; i += GRAPHQL_BATCH_SIZE) {
+    fetchMetadataBatch(repos.slice(i, i + GRAPHQL_BATCH_SIZE));
+  }
+}
+
+function decodeContent(responseData) {
+  if (Array.isArray(responseData)) {
+    throw new Error("The selected path is a directory, not a markdown file.");
+  }
+  if (!responseData.content) {
+    throw new Error("GitHub did not return file content for this path.");
+  }
+
+  const binary = atob(responseData.content.replace(/\n/g, ""));
+  const bytes = Uint8Array.from(binary, c => c.charCodeAt(0));
+  return new TextDecoder("utf-8").decode(bytes);
+}
+
+function renderMarkdown(rawMarkdown) {
+  send(
+    () => octokit.request("POST /markdown", {
+      text: rawMarkdown,
+      mode: "gfm",
+      context: CURRENT_REPO
+    }),
+    (headers, html) => {
+      setContent(sanitizeHtml(html));
+      collectRepoLinks();
+      clearNonErrorMsg();
+      enrichRepoLinks();
+    },
+    () => {
+      setContent(`<pre class="as-raw-markdown"></pre>`);
+      JQ_CONTENT.find("pre").text(rawMarkdown);
+      setMsg(AS_MSG_MARKDOWN_RENDER_ERROR);
       enableQueryFields();
     }
-  };
-  const onFailure = () => displayConditionalErrorMsg();
-  send(requestPromise, onSuccess, onFailure);
+  );
 }
 
-/** Extracts and sanitizes 'user' and 'repo' values from potential inputs. */
+function fetchMarkdownFile(owner, repo, path, ref) {
+  const options = { owner, repo, path };
+  if (ref) {
+    options.ref = ref;
+  }
+
+  send(
+    () => octokit.repos.getContent(options),
+    (headers, responseData) => {
+      try {
+        const rawMarkdown = decodeContent(responseData);
+        renderMarkdown(rawMarkdown);
+      } catch (error) {
+        setMsg(error.message);
+        enableQueryFields();
+      }
+    },
+    () => {
+      setMsg(AS_MSG_LOAD_ERROR);
+      enableQueryFields();
+    }
+  );
+}
+
+function initial_request(owner, repo) {
+  send(
+    () => octokit.repos.get({ owner, repo }),
+    (headers, responseData) => {
+      if (!CURRENT_REF) {
+        CURRENT_REF = responseData.default_branch;
+      }
+      updateHeader();
+      fetchMarkdownFile(owner, repo, CURRENT_PATH, CURRENT_REF);
+    },
+    () => {
+      setMsg(AS_MSG_LOAD_ERROR);
+      enableQueryFields();
+    }
+  );
+}
+
 function parse_query(queryString) {
   const shorthand = /^(?<user>[\w.-]+)\/(?<repo>[\w.-]+)$/;
-  const shorthandMatch = shorthand.exec(queryString);
+  const shorthandMatch = shorthand.exec((queryString || "").trim());
 
-  if (shorthandMatch) { // we are dealing with "user/repo" input format
+  if (shorthandMatch) {
     const {user, repo} = shorthandMatch.groups;
     return {user, repo};
   }
@@ -479,84 +422,96 @@ function parse_query(queryString) {
   }
 
   const values = pathname.split('/').filter(s => s.length > 0);
-  if (values.length < 2)
+  if (values.length < 2) {
     return null;
+  }
 
   const [user, repo] = values;
-  return {user, repo};
+  return {user, repo: repo.replace(/\.git$/i, "")};
 }
 
-
 function initiate_search() {
-  /* Checking if search is allowed. */
-  if (searchNotAllowed())
-    return; // abort
+  if (searchNotAllowed()) {
+    return;
+  }
 
   clear_old_data();
 
-  let queryString = getQueryOrDefault("payne911/PieMenu");
+  const queryString = getQueryOrDefault("sindresorhus/awesome");
   const queryValues = parse_query(queryString);
 
   if (!queryValues) {
-    setMsg('Please enter a valid query: it should contain two strings separated by a "/", or the full URL to a GitHub repo');
+    setMsg('Please enter a valid query: it should contain two strings separated by a "/", or the full URL to a GitHub repo.');
     ga_faultyQuery(queryString);
-    return; // abort
+    return;
   }
 
   const {user, repo} = queryValues;
+  CURRENT_REPO = `${user}/${repo}`;
+  CURRENT_PATH = normalizePath(getPathOrDefault(DEFAULT_MARKDOWN_PATH));
+  CURRENT_REF = getRefOrNull(getRefFromUrl());
 
   setUpOctokitWithLatestToken();
-
-  setQuery(`${user}/${repo}`);
+  setQuery(CURRENT_REPO);
+  setPath(CURRENT_PATH);
   setQueryFieldsAsLoading();
-  hideFilterContainer();
-  setMsg(UF_MSG_SCANNING);
+  setMsg(AS_MSG_LOADING_MARKDOWN);
+  showStatsBar();
+  updateStatsBar();
 
   if (history.replaceState) {
-    history.replaceState({}, document.title, `?repo=${user}/${repo}`); // replace current URL param
+    const params = new URLSearchParams();
+    params.set("repo", CURRENT_REPO);
+    if (CURRENT_PATH !== DEFAULT_MARKDOWN_PATH) {
+      params.set("path", CURRENT_PATH);
+    }
+    if (CURRENT_REF) {
+      params.set("ref", CURRENT_REF);
+    }
+    history.replaceState({}, document.title, `?${params.toString()}`);
   }
+
   ga_searchQuery(user, repo);
   initial_request(user, repo);
 }
 
-/* Object used for REST calls. */
+
 const MyOctokit = Octokit.plugin(throttling);
 let octokit;
 setUpOctokitWithLatestToken();
 function setUpOctokitWithLatestToken() {
-  if (!shouldReconstructOctokit)
+  if (!shouldReconstructOctokit) {
     return;
+  }
 
   octokit = new MyOctokit({
     auth: LOCAL_STORAGE_GITHUB_ACCESS_TOKEN,
-    userAgent: 'useful-forks',
-    // https://github.com/octokit/plugin-throttling.js#usage
+    userAgent: 'awesome-stars',
     throttle: {
       onRateLimit: (retryAfter, options, octokit, retryCount) => {
         onRateLimitExceeded();
-        if (retryCount < 1) { // only retries once
-          return true; // true = retry
+        if (retryCount < 1) {
+          return true;
         }
       },
-      onSecondaryRateLimit: (retryAfter, options, octokit) => { // slow down
-        setMsg(UF_MSG_SLOWER);
+      onSecondaryRateLimit: (retryAfter, options, octokit) => {
+        setMsg(AS_MSG_SLOWER);
 
-        // setup the progress bar
-        if (!getJq_ProgressBar()[0]) { // only if it isn't displayed yet
+        if (!getJq_ProgressBar()[0]) {
           JQ_ID_MSG.after(`<progress class="progress is-small" value="${retryAfter}" max="${retryAfter}">some%</progress>`);
           getJq_ProgressBar().animate(
-            {value: "0"}, // target for the "value" attribute
+            {value: "0"},
             {
-                duration: 1000 * retryAfter, // in ms
-                easing: 'linear',
-                done: function() {
-                    getJq_ProgressBar().removeAttr('value'); // for moving bar
-                }
+              duration: 1000 * retryAfter,
+              easing: 'linear',
+              done: function() {
+                getJq_ProgressBar().removeAttr('value');
+              }
             }
           );
         }
 
-        return true; // true = automatically retry after given amount of seconds (usually 1 min)
+        return true;
       }
     }
   });
@@ -565,21 +520,21 @@ function setUpOctokitWithLatestToken() {
 }
 
 
-/* Setting up query triggers. */
 JQ_SEARCH_BTN.click(event => {
   event.preventDefault();
   initiate_search();
 });
 JQ_REPO_FIELD.keyup(event => {
-  if (event.keyCode === 13) { // 'ENTER'
+  if (event.keyCode === 13) {
+    initiate_search();
+  }
+});
+JQ_PATH_FIELD.keyup(event => {
+  if (event.keyCode === 13) {
     initiate_search();
   }
 });
 
-/* Trigger an automatic query is a value was extracted from the URL Param. */
 if (JQ_REPO_FIELD.val()) {
   JQ_SEARCH_BTN.click();
 }
-
-/* User updated the filters, so we refresh the table. */
-JQ_FILTER_FIELD.on('input', update_filter);

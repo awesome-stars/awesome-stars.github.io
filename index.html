@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Awesome Stars</title>
+  <script>
+    const target = new URL("website/", window.location.href);
+    target.search = window.location.search;
+    target.hash = window.location.hash;
+    window.location.replace(target.toString());
+  </script>
+  <meta http-equiv="refresh" content="0; url=website/">
+</head>
+<body>
+  <p><a href="website/">Open Awesome Stars</a></p>
+</body>
+</html>

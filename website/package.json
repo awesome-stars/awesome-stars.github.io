@@ -1,7 +1,7 @@
 {
-  "name": "useful-forks-website",
-  "description": "List of dependencies used by the Useful Forks website.",
-  "homepage": "https://useful-forks.github.io/",
+  "name": "awesome-stars-website",
+  "description": "Render awesome lists with live GitHub repository stats.",
+  "homepage": "https://awesome-stars.github.io/",
   "version": "1.0.0",
   "author": "Jérémi Grenier-Berthiaume",
   "license": "MIT",

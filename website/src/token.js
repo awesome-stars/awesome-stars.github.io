@@ -1,7 +1,7 @@
 const JQ_TOKEN_TITLE = $('#modalTokenCardTitle');
 const JQ_TOKEN_FIELD = $('#tokenInput');
 const JQ_TOKEN_BTN   = $('#addTokenBtn');
-const JQ_TOKEN_POPUP = $('#useful_forks_token_popup');
+const JQ_TOKEN_POPUP = $('#awesome_stars_token_popup');
 
 let shouldTriggerQueryOnTokenSave = false;
 let shouldReconstructOctokit = true;
@@ -60,6 +60,6 @@ JQ_TOKEN_FIELD.keyup(event => {
 });
 
 /* Get the locally saved Access Token. */
-const GITHUB_ACCESS_TOKEN_STORAGE_KEY = "useful-forks-access-token";
+const GITHUB_ACCESS_TOKEN_STORAGE_KEY = "awesome-stars-access-token";
 let LOCAL_STORAGE_GITHUB_ACCESS_TOKEN = localStorage.getItem(GITHUB_ACCESS_TOKEN_STORAGE_KEY);
 drawAddTokenBtn(LOCAL_STORAGE_GITHUB_ACCESS_TOKEN);
