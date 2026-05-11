@@ -7,7 +7,6 @@ const GRAPHQL_BATCH_SIZE = 50;
 let CURRENT_REPO = null;
 let CURRENT_PATH = DEFAULT_MARKDOWN_PATH;
 let CURRENT_REF = null;
-let IS_AUTO_PATH = true;
 let RATE_LIMIT_EXCEEDED;
 let TOTAL_API_CALLS_COUNTER;
 let ONGOING_REQUESTS_COUNTER = 0;
@@ -490,14 +489,14 @@ function fetchAutoReadme(owner, repo) {
   );
 }
 
-function initial_request(owner, repo) {
+function initial_request(owner, repo, autoPath) {
   send(
     () => octokit.repos.get({ owner, repo }),
     (headers, responseData) => {
       if (!CURRENT_REF) {
         CURRENT_REF = responseData.default_branch;
       }
-      if (IS_AUTO_PATH) {
+      if (autoPath) {
         fetchAutoReadme(owner, repo);
       } else {
         updateHeader();
@@ -541,7 +540,10 @@ function initiate_search() {
     return;
   }
 
-  IS_AUTO_PATH = !JQ_PATH_FIELD.val().trim();
+  // Capture before anything modifies the field, then pass as a closure param.
+  const userTypedPath = JQ_PATH_FIELD.val().trim();
+  const autoPath = !userTypedPath;
+
   clear_old_data();
 
   const queryString = getQueryOrDefault("sindresorhus/awesome");
@@ -555,12 +557,17 @@ function initiate_search() {
 
   const {user, repo} = queryValues;
   CURRENT_REPO = `${user}/${repo}`;
-  CURRENT_PATH = normalizePath(getPathOrDefault(DEFAULT_MARKDOWN_PATH));
   CURRENT_REF = getRefOrNull(getRefFromUrl());
+
+  if (autoPath) {
+    CURRENT_PATH = DEFAULT_MARKDOWN_PATH;
+  } else {
+    CURRENT_PATH = normalizePath(userTypedPath);
+    setPath(CURRENT_PATH);
+  }
 
   setUpOctokitWithLatestToken();
   setQuery(CURRENT_REPO);
-  setPath(CURRENT_PATH);
   setQueryFieldsAsLoading();
   setMsg(AS_MSG_LOADING_MARKDOWN);
   showStatsBar();
@@ -569,7 +576,7 @@ function initiate_search() {
   if (history.replaceState) {
     const params = new URLSearchParams();
     params.set("repo", CURRENT_REPO);
-    if (CURRENT_PATH !== DEFAULT_MARKDOWN_PATH) {
+    if (!autoPath) {
       params.set("path", CURRENT_PATH);
     }
     if (CURRENT_REF) {
@@ -579,7 +586,7 @@ function initiate_search() {
   }
 
   ga_searchQuery(user, repo);
-  initial_request(user, repo);
+  initial_request(user, repo, autoPath);
 }
 
 
