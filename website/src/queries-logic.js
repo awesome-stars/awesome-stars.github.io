@@ -7,6 +7,7 @@ const GRAPHQL_BATCH_SIZE = 50;
 let CURRENT_REPO = null;
 let CURRENT_PATH = DEFAULT_MARKDOWN_PATH;
 let CURRENT_REF = null;
+let IS_AUTO_PATH = true;
 let RATE_LIMIT_EXCEEDED;
 let TOTAL_API_CALLS_COUNTER;
 let ONGOING_REQUESTS_COUNTER = 0;
@@ -38,6 +39,65 @@ function clear_old_data() {
 
 function getOnlyDate(full) {
   return full ? full.split('T')[0] : "unknown";
+}
+
+function isMarkdownExtension(filename) {
+  return /\.(md|markdown)$/i.test(filename);
+}
+
+// Heat computation (log scale for stars/forks, linear for date)
+function computeStarHeat(count) {
+  return Math.min(1, Math.log10(count + 1) / 4); // 10k stars = max heat
+}
+
+function computeForkHeat(count) {
+  return Math.min(1, Math.log10(count + 1) / 3); // 1k forks = max heat
+}
+
+function computeDateHeat(pushedAt) {
+  if (!pushedAt) return 0;
+  const daysSince = (Date.now() - new Date(pushedAt).getTime()) / 86400000;
+  return Math.max(0, 1 - daysSince / 730); // 2 years old = cold
+}
+
+function lerpN(a, b, t) {
+  return a + (b - a) * t;
+}
+
+function hslStr(h, s, l) {
+  return `hsl(${h},${s.toFixed(0)}%,${l.toFixed(0)}%)`;
+}
+
+// Each segment: cold = desaturated near-white bg / near-black text; hot = vivid themed color
+function starsHeatStyle(t) {
+  return {
+    background:  hslStr(48, lerpN(0,  95, t), lerpN(98, 83, t)),
+    color:       hslStr(48, lerpN(0, 100, t), lerpN(12, 18, t)),
+    borderColor: hslStr(48, lerpN(0,  85, t), lerpN(90, 60, t))
+  };
+}
+
+function forksHeatStyle(t) {
+  return {
+    background:  hslStr(210, lerpN(0,  90, t), lerpN(98, 85, t)),
+    color:       hslStr(210, lerpN(0, 100, t), lerpN(12, 30, t)),
+    borderColor: hslStr(210, lerpN(0,  85, t), lerpN(90, 52, t))
+  };
+}
+
+function dateHeatStyle(t) {
+  return {
+    background:  hslStr(120, lerpN(0, 65, t), lerpN(98, 88, t)),
+    color:       hslStr(120, lerpN(0, 65, t), lerpN(12, 20, t)),
+    borderColor: hslStr(120, lerpN(0, 60, t), lerpN(90, 62, t))
+  };
+}
+
+function applyHeatStyle(el, style) {
+  if (!el) return;
+  el.style.background  = style.background;
+  el.style.color       = style.color;
+  el.style.borderColor = style.borderColor;
 }
 
 function normalizePath(path) {
@@ -213,6 +273,9 @@ function createBadgeElement(state, stats) {
       <span class="as-badge-segment as-stars">${SVG_STAR} ${formatNumber(stats.stargazerCount)}</span>
       <span class="as-badge-segment as-forks">${SVG_FORK} ${formatNumber(stats.forkCount)}</span>
       <span class="as-badge-segment as-date">${SVG_DATE} ${getOnlyDate(stats.pushedAt)}</span>`;
+    applyHeatStyle(badge.querySelector('.as-stars'), starsHeatStyle(computeStarHeat(stats.stargazerCount)));
+    applyHeatStyle(badge.querySelector('.as-forks'), forksHeatStyle(computeForkHeat(stats.forkCount)));
+    applyHeatStyle(badge.querySelector('.as-date'),  dateHeatStyle(computeDateHeat(stats.pushedAt)));
   } else if (state === "token") {
     badge.title = "Save a GitHub token to load repository metadata";
     badge.textContent = "stats need token";
@@ -395,6 +458,38 @@ function fetchMarkdownFile(owner, repo, path, ref) {
   );
 }
 
+function fetchAutoReadme(owner, repo) {
+  const options = { owner, repo };
+  if (CURRENT_REF) options.ref = CURRENT_REF;
+
+  send(
+    () => octokit.repos.getReadme(options),
+    (headers, responseData) => {
+      CURRENT_PATH = responseData.path || DEFAULT_MARKDOWN_PATH;
+      setPath(CURRENT_PATH);
+      updateHeader();
+      try {
+        const rawContent = decodeContent(responseData);
+        if (isMarkdownExtension(CURRENT_PATH)) {
+          renderMarkdown(rawContent);
+        } else {
+          setContent(`<pre class="as-raw-markdown"></pre>`);
+          JQ_CONTENT.find("pre").text(rawContent);
+          clearNonErrorMsg();
+          enableQueryFields();
+        }
+      } catch (error) {
+        setMsg(error.message);
+        enableQueryFields();
+      }
+    },
+    () => {
+      setMsg(AS_MSG_LOAD_ERROR);
+      enableQueryFields();
+    }
+  );
+}
+
 function initial_request(owner, repo) {
   send(
     () => octokit.repos.get({ owner, repo }),
@@ -402,8 +497,12 @@ function initial_request(owner, repo) {
       if (!CURRENT_REF) {
         CURRENT_REF = responseData.default_branch;
       }
-      updateHeader();
-      fetchMarkdownFile(owner, repo, CURRENT_PATH, CURRENT_REF);
+      if (IS_AUTO_PATH) {
+        fetchAutoReadme(owner, repo);
+      } else {
+        updateHeader();
+        fetchMarkdownFile(owner, repo, CURRENT_PATH, CURRENT_REF);
+      }
     },
     () => {
       setMsg(AS_MSG_LOAD_ERROR);
@@ -442,6 +541,7 @@ function initiate_search() {
     return;
   }
 
+  IS_AUTO_PATH = !JQ_PATH_FIELD.val().trim();
   clear_old_data();
 
   const queryString = getQueryOrDefault("sindresorhus/awesome");

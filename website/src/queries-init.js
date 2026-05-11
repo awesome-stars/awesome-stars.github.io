@@ -136,7 +136,11 @@ function getPathOrDefault(defaultVal) {
   return JQ_PATH_FIELD.val();
 }
 function setApiCallsLabel(total) {
-  JQ_TOTAL_CALLS.html(total + " calls");
+  if (total > 0) {
+    JQ_TOTAL_CALLS.text(total + " GitHub API " + (total === 1 ? "call" : "calls") + " so far").show();
+  } else {
+    JQ_TOTAL_CALLS.hide().empty();
+  }
 }
 
 function getRepoNameFromUrl() {
@@ -164,7 +168,6 @@ function landingPageTrigger() {
     }
     return "";
   }
-  setPath("README.md");
   return LANDING_PAGE_INIT_MSG;
 }
 

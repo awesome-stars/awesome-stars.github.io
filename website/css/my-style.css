@@ -92,21 +92,6 @@
 .as-badge-segment:last-child {
   border-radius: 0 4px 4px 0;
 }
-.as-badge-loaded .as-stars {
-  background: #fff8c5;
-  border-color: #eac54f;
-  color: #5f4b00;
-}
-.as-badge-loaded .as-forks {
-  background: #ddf4ff;
-  border-color: #54aeef;
-  color: #0969da;
-}
-.as-badge-loaded .as-date {
-  background: #f6f8fa;
-  border-color: var(--as-border);
-  color: #57606a;
-}
 .as-badge-token,
 .as-badge-loading,
 .as-badge-unavailable {
@@ -204,6 +189,13 @@
 }
 .as-raw-markdown {
   white-space: pre-wrap;
+}
+
+.api-calls-label {
+  color: var(--as-muted);
+  font-size: 0.78rem;
+  margin-top: 6px;
+  text-align: center;
 }
 
 .search-container {
