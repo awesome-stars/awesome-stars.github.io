@@ -11,6 +11,8 @@ Awesome Stars renders a GitHub markdown file, finds GitHub repository links in i
 
 The itch is simple: an awesome list can be genuinely useful and still hard to scan. You open a README with two hundred links, every project has a good name, and suddenly you are opening tabs just to find out which libraries are alive, popular, or abandoned. Awesome Stars keeps the list intact, but adds the missing context: stars, forks, and last push date.
 
+![Awesome Stars demo](website/assets/demo.gif)
+
 ## About
 
 Awesome Stars is a small companion for GitHub awesome lists. Give it a repo, and it renders the list with live popularity and maintenance signals next to each GitHub project link, so readers can browse with context instead of tab-hunting.
